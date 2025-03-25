@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>CSVサマリ YAML 生成ツール（大容量対応）</title>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
+</head>
+<body>
+  <h2>📊 CSVサマリ YAML 生成ツール（大容量対応）</h2>
+
+  <p><strong>① 分析対象のCSVファイルを選択：</strong></p>
+  <input type="file" id="csvFileInput" accept=".csv" /><br /><br />
+
+  <p><strong>② カラム定義CSVファイルを選択（csv, table, column_type の3列）：</strong></p>
+  <input type="file" id="columnDefInput" accept=".csv" /><br /><br />
+
+  <button onclick="processFiles()">📥 YAML生成</button>
+
+  <script>
+    function processFiles() {
+      const csvFile = document.getElementById('csvFileInput').files[0];
+      const defFile = document.getElementById('columnDefInput').files[0];
+
+      if (!csvFile || !defFile) {
+        alert("CSVファイルとカラム定義ファイルを両方指定してください。");
+        return;
+      }
+
+      Papa.parse(defFile, {
+        header: true,
+        skipEmptyLines: true,
+        complete: function (defResults) {
+          const columnDefs = defResults.data.filter(row => row["csv"] && row["column_type"]);
+
+          const targetColumns = columnDefs.map(row => ({
+            name: row["csv"].trim(),
+            type: row["column_type"].trim().toLowerCase()
+          }));
+
+          const summary = {};
+          const baseKey = csvFile.name.replace(/\.csv$/, '');
+          summary[baseKey] = {
+            collection: { count: 0 },
+            columns: {}
+          };
+
+          // 初期化：カラムごとの集計用データ
+          const colStats = {};
+          targetColumns.forEach((col, idx) => {
+            colStats[col.name] = {
+              name: col.name,
+              null_count: 0,
+              value_counts: {},
+              min_value: null,
+              max_value: null,
+              type: col.type
+            };
+          });
+
+          // ストリーム処理開始
+          Papa.parse(csvFile, {
+            header: true,
+            skipEmptyLines: true,
+            worker: false,
+            step: function (results) {
+              const row = results.data;
+              summary[baseKey].collection.count++;
+
+              targetColumns.forEach(col => {
+                const value = row[col.name].trim();
+                const isEmpty = value === undefined || value === '';
+
+                if (isEmpty) {
+                  colStats[col.name].null_count++;
+                } else {
+                  // カウント
+                  colStats[col.name].value_counts[value] = (colStats[col.name].value_counts[value] || 0) + 1;
+
+                  // min/max 計算
+                  if (col.type === "number") {
+                    const num = parseFloat(value);
+                    if (!isNaN(num)) {
+                      if (colStats[col.name].min_value === null || num < colStats[col.name].min_value)
+                        colStats[col.name].min_value = num;
+                      if (colStats[col.name].max_value === null || num > colStats[col.name].max_value)
+                        colStats[col.name].max_value = num;
+                    }
+                  } else {
+                    if (colStats[col.name].min_value === null || value < colStats[col.name].min_value)
+                      colStats[col.name].min_value = value;
+                    if (colStats[col.name].max_value === null || value > colStats[col.name].max_value)
+                      colStats[col.name].max_value = value;
+                  }
+                }
+              });
+            },
+            complete: function () {
+              // 統計値のまとめ
+              targetColumns.forEach((col, idx) => {
+                const stat = colStats[col.name];
+                const values = Object.keys(stat.value_counts);
+                const colSummary = {
+                  name: col.name,
+                  min_value: stat.min_value !== null ? String(stat.min_value) : null,
+                  max_value: stat.max_value !== null ? String(stat.max_value) : null,
+                  null_count: stat.null_count,
+                  value_type_count: values.length
+                };
+
+                if (values.length <= 50) {
+                  // countの降順、countが同じだったらvalueの昇順
+                  values.sort((a, b) => {
+                    const countA = stat.value_counts[a];
+                    const countB = stat.value_counts[b];
+                    if (countA !== countB) {
+                      return countB - countA; // ① count昇順
+                    }
+                    if (stat.type === "number") {
+                      return parseFloat(a) - parseFloat(b); // ② 数値として昇順
+                    } else {
+                      return String(a).localeCompare(String(b)); // ③ 文字列昇順（Unicode順）
+                    }
+                  });
+
+                  values.forEach((v, i) => {
+                    colSummary[`value${i + 1}`] = {
+                      value: v || null,
+                      count: stat.value_counts[v]
+                    };
+                  });
+                }
+
+                summary[baseKey].columns[`column${idx + 1}`] = colSummary;
+              });
+
+              // YAML出力
+              const yamlText = jsyaml.dump(summary, { noRefs: true, sortKeys: false });
+              const now = new Date();
+              const timestamp = now.toISOString().replace(/[-:T]/g, '').slice(0, 14);
+              const filename = `csv_summary_${baseKey}_${timestamp}.yaml`;
+              downloadTextFile(yamlText, filename);
+            }
+          });
+        }
+      });
+    }
+
+    function downloadTextFile(text, filename) {
+      const blob = new Blob([text], { type: 'text/yaml' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      link.click();
+    }
+  </script>
+</body>
+</html>
