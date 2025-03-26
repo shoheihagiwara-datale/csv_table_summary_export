@@ -15,12 +15,20 @@
   <p><strong>② カラム定義CSVファイルを選択（csv, table, column_type の3列）：</strong></p>
   <input type="file" id="columnDefInput" accept=".csv" /><br /><br />
 
-  <button onclick="processFiles()">📥 YAML生成</button>
+  <button id="generateYamlButton" onclick="processFiles()">📥 YAML生成</button>
 
   <script>
     function processFiles() {
       const csvFile = document.getElementById('csvFileInput').files[0];
       const defFile = document.getElementById('columnDefInput').files[0];
+
+      const csvFileInput = document.getElementById('csvFileInput');
+      const columnDefInput = document.getElementById('columnDefInput');
+      const generateYamlButton = document.getElementById('generateYamlButton');
+
+      csvFileInput.disabled = true;
+      columnDefInput.disabled = true;
+      generateYamlButton.disabled = true;
 
       if (!csvFile || !defFile) {
         alert("CSVファイルとカラム定義ファイルを両方指定してください。");
@@ -140,6 +148,11 @@
               const timestamp = now.toISOString().replace(/[-:T]/g, '').slice(0, 14);
               const filename = `csv_summary_${baseKey}_${timestamp}.yaml`;
               downloadTextFile(yamlText, filename);
+
+              // ボタンを再活性化
+              csvFileInput.disabled = false;
+              columnDefInput.disabled = false;
+              generateYamlButton.disabled = false;
             }
           });
         }
