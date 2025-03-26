@@ -41,6 +41,8 @@
         complete: function (defResults) {
           const columnDefs = defResults.data.filter(row => row["csv"] && row["column_type"]);
 
+          console.log("columnDefs: ", columnDefs);
+
           const targetColumns = columnDefs.map(row => ({
             name: row["csv"].trim(),
             type: row["column_type"].trim().toLowerCase()
